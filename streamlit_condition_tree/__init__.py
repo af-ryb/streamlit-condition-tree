@@ -1,19 +1,16 @@
-import os
+from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
-_RELEASE = False
+_BUILD_DIR = Path(__file__).parent / "frontend" / "build"
 
-if not _RELEASE:
-    _component_func = components.declare_component(
-        "streamlit_condition_tree",
-        url="http://localhost:3001",
-    )
-else:
-    parent_dir = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(parent_dir, "frontend/build")
-    _component_func = components.declare_component("streamlit_condition_tree", path=build_dir)
+_condition_tree_component = st.components.v2.component(
+    name="streamlit_condition_tree",
+    js=(_BUILD_DIR / "index.js").read_text(),
+    css=(_BUILD_DIR / "style.css").read_text(),
+    html="<div></div>",
+    isolate_styles=False,
+)
 
 type_mapper = {
     'b': 'boolean',
@@ -123,7 +120,7 @@ def condition_tree(config: dict,
         Input condition tree
         Default: None
     min_height: int
-        Minimum height of the component frame
+        Minimum height of the component frame (kept for API compatibility)
         Default: 400
     placeholder: str
         Text displayed when the condition tree is empty
@@ -156,21 +153,28 @@ def condition_tree(config: dict,
 
     walk_config(config, lambda v: v.js_code if isinstance(v, JsCode) else v)
 
-    output_tree, component_value = _component_func(
-        config=config,
-        return_type=return_type,
-        tree=tree,
+    result = _condition_tree_component(
+        data=dict(
+            config=config,
+            return_type=return_type,
+            tree=tree,
+            placeholder=placeholder,
+            always_show_buttons=always_show_buttons,
+        ),
+        default={"output_tree": "", "value": ""},
         key='_' + key if key else None,
-        min_height=min_height,
-        placeholder=placeholder,
-        always_show_buttons=always_show_buttons,
-        default=['', ''],
+        on_output_tree_change=lambda: None,
+        on_value_change=lambda: None,
     )
+
+    output_tree = result.get("output_tree", "") if result else ""
+    component_value = result.get("value", "") if result else ""
 
     if return_type == 'queryString' and not component_value:
         # Default string that applies no filter in DataFrame.query
         component_value = 'index in index'
 
-    st.session_state[key] = output_tree
+    if key:
+        st.session_state[key] = output_tree
 
     return component_value
