@@ -96,6 +96,38 @@ def config_from_dataframe(dataframe):
     return {'fields': fields}
 
 
+def _clean_tree(tree, valid_fields):
+    """Remove rules referencing fields not in valid_fields."""
+    if not isinstance(tree, dict):
+        return tree
+
+    if tree.get('type') == 'rule':
+        field = (tree.get('properties') or {}).get('field')
+        if field is not None and field not in valid_fields:
+            return None
+        return tree
+
+    # Group or rule_group — clean children
+    children_key = 'children1' if 'children1' in tree else 'children'
+    children = tree.get(children_key)
+    if children is None:
+        return tree
+
+    if isinstance(children, list):
+        tree[children_key] = [
+            c for c in (_clean_tree(c, valid_fields) for c in children)
+            if c is not None
+        ]
+    elif isinstance(children, dict):
+        tree[children_key] = {
+            k: v for k, v in (
+                (k, _clean_tree(v, valid_fields)) for k, v in children.items()
+            ) if v is not None
+        }
+
+    return tree
+
+
 def condition_tree(config: dict,
                    return_type: str = 'queryString',
                    tree: dict = None,
@@ -150,6 +182,10 @@ def condition_tree(config: dict,
             fields[field_name] = field_config
 
         config['fields'] = fields
+
+    if tree is not None:
+        valid_fields = set(config['fields'].keys())
+        tree = _clean_tree(tree, valid_fields)
 
     walk_config(config, lambda v: v.js_code if isinstance(v, JsCode) else v)
 

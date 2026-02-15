@@ -106,7 +106,7 @@ const getStreamlitTheme = () => {
 
 function ConditionTree({ data, setStateValue }: Props) {
   // Initialize config once from first render's data
-  const [config] = useState<Config>(() => {
+  const [config, setConfig] = useState<Config>(() => {
     let userConfig = deepMap(data.config, parseJsCodeFromPython)
     return _.merge({}, defaultConfig, userConfig)
   })
@@ -132,6 +132,33 @@ function ConditionTree({ data, setStateValue }: Props) {
   // Track return_type via ref so debounced function always sees latest
   const returnTypeRef = useRef(data.return_type)
   returnTypeRef.current = data.return_type
+
+  // Track previous field keys to detect config changes
+  const prevFieldKeysRef = useRef(
+    Object.keys(data.config?.fields || {}).sort().join('\0')
+  )
+
+  useEffect(() => {
+    const currentFieldKeys = Object.keys(data.config?.fields || {}).sort().join('\0')
+    if (currentFieldKeys !== prevFieldKeysRef.current) {
+      prevFieldKeysRef.current = currentFieldKeys
+
+      const userConfig = deepMap(data.config, parseJsCodeFromPython)
+      const newConfig = _.merge({}, defaultConfig, userConfig)
+      setConfig(newConfig)
+
+      const checkedTree = QbUtils.checkTree(tree, newConfig)
+      setTree(checkedTree)
+
+      // Send sanitized values to Python
+      const exportFunc = exportFunctions[returnTypeRef.current]
+      const exportValue = exportFunc ? exportFunc(checkedTree, newConfig) : ""
+      let outputTree: JsonTree = QbUtils.getTree(checkedTree)
+      unformatTree(outputTree)
+      setStateValue("output_tree", outputTree)
+      setStateValue("value", exportValue)
+    }
+  })
 
   // Debounced function to send value to Streamlit
   const sendValue = useCallback(
