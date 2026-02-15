@@ -19,7 +19,7 @@ type_mapper = {
     'f': 'number',
     'c': '',
     'm': '',
-    'M': 'datetime',
+    'M': 'date',
     'O': 'text',
     'S': 'text',
     'U': 'text',
@@ -74,24 +74,92 @@ def walk_config(config, func):
                 config[k] = func(config[k])
 
 
-def config_from_dataframe(dataframe):
-    """Return a basic configuration from dataframe columns"""
+def config_from_dataframe(dataframe, exclude_fields=None, max_select_values=200):
+    """Return a configuration from dataframe columns.
 
+    Parameters
+    ----------
+    dataframe : DataFrame
+        Source dataframe to generate config from.
+    exclude_fields : list of str, optional
+        Column names to exclude from the config.
+    max_select_values : int
+        Text columns with this many or fewer unique values are auto-converted
+        to select fields. Set to 0 to disable auto-conversion.
+        Default: 200
+    """
     fields = {}
     for col_name, col_dtype in zip(dataframe.columns, dataframe.dtypes):
-        col_type = 'select' if col_dtype == 'category' else type_mapper[col_dtype.kind]
+        if exclude_fields and col_name in exclude_fields:
+            continue
 
-        if col_type:
-            col_config = {
+        col_type = 'select' if col_dtype == 'category' else type_mapper.get(col_dtype.kind, '')
+
+        if not col_type:
+            continue
+
+        if col_type == 'text' and max_select_values > 0:
+            try:
+                unique_values = sorted(dataframe[col_name].dropna().unique())
+                if len(unique_values) <= max_select_values:
+                    fields[col_name] = {
+                        'label': col_name,
+                        'type': 'select',
+                        'operators': ['select_any_in', 'select_not_any_in'],
+                        'valueSources': ['value'],
+                        'defaultOperator': 'select_any_in',
+                        'fieldSettings': {
+                            'listValues': [{'value': str(v), 'title': str(v)} for v in unique_values],
+                            'showSearch': True,
+                        },
+                    }
+                    continue
+            except Exception:
+                pass  # Fall through to text handling below
+
+        if col_type == 'text':
+            fields[col_name] = {
                 'label': col_name,
-                'type': col_type
+                'type': 'text',
+                'valueSources': ['value'],
             }
-            if col_type == 'select':
-                categories = dataframe[col_name].cat.categories
-                col_config['fieldSettings'] = {
-                    'listValues': [{'value': c, 'title': c} for c in categories]
-                }
-            fields[f'{col_name}'] = col_config
+        elif col_type == 'number':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'number',
+                'operators': ['greater', 'greater_or_equal', 'less', 'less_or_equal',
+                              'between', 'equal', 'not_equal'],
+                'valueSources': ['value'],
+                'defaultOperator': 'greater_or_equal',
+            }
+        elif col_type == 'date':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'date',
+                'operators': ['between', 'less', 'less_or_equal', 'greater', 'greater_or_equal',
+                              'equal', 'not_equal'],
+                'valueSources': ['value'],
+                'defaultOperator': 'between',
+            }
+        elif col_type == 'boolean':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'boolean',
+                'operators': ['equal'],
+                'valueSources': ['value'],
+            }
+        elif col_type == 'select':
+            categories = dataframe[col_name].cat.categories
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'select',
+                'operators': ['select_any_in', 'select_not_any_in'],
+                'valueSources': ['value'],
+                'fieldSettings': {
+                    'listValues': [{'value': str(c), 'title': str(c)} for c in categories],
+                    'showSearch': True,
+                },
+            }
 
     return {'fields': fields}
 
