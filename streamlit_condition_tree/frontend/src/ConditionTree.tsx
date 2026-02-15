@@ -86,7 +86,6 @@ const parseJsCodeFromPython = (v: string) => {
 const getStreamlitTheme = () => {
   const s = getComputedStyle(document.documentElement)
   const primaryColor = s.getPropertyValue("--primary-color").trim()
-  const textColor = s.getPropertyValue("--text-color").trim()
   const font = s.getPropertyValue("--font").trim()
 
   // Detect dark mode via Streamlit's data attribute or color scheme
@@ -98,7 +97,6 @@ const getStreamlitTheme = () => {
 
   return {
     primaryColor: primaryColor || "#ff4b4b",
-    textColor: textColor || "#31333f",
     font: font || "Source Sans Pro, sans-serif",
     base: isDark ? "dark" : "light",
   }
@@ -237,7 +235,6 @@ function ConditionTree({ data, setStateValue }: Props) {
         theme={{
           token: {
             colorPrimary: theme.primaryColor,
-            colorText: theme.textColor,
             fontFamily: theme.font,
             fontSize: 16,
             controlHeight: 38,

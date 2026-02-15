@@ -899,6 +899,10 @@ body.qb-dragging .ant-popover {
   margin-right: 3px;
   margin-bottom: 4px;
 }
+.st-condition-tree {
+    color: var(--text-color);
+}
+
 .st-condition-tree .query-builder>.group-container,
 .st-condition-tree .query-builder>.group-container>.group>div,
 .st-condition-tree .query-builder>.group-container>.group>.group--children>.group-or-rule-container {

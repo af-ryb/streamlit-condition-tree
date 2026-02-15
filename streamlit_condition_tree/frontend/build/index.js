@@ -77000,12 +77000,11 @@ const kGe = {
   } else
     return e;
 }, jGe = () => {
-  const e = getComputedStyle(document.documentElement), t = e.getPropertyValue("--primary-color").trim(), r = e.getPropertyValue("--text-color").trim(), n = e.getPropertyValue("--font").trim(), a = document.documentElement.getAttribute("data-theme") === "dark" || document.body.classList.contains("dark") || e.getPropertyValue("color-scheme").trim().includes("dark") || window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const e = getComputedStyle(document.documentElement), t = e.getPropertyValue("--primary-color").trim(), r = e.getPropertyValue("--font").trim(), n = document.documentElement.getAttribute("data-theme") === "dark" || document.body.classList.contains("dark") || e.getPropertyValue("color-scheme").trim().includes("dark") || window.matchMedia("(prefers-color-scheme: dark)").matches;
   return {
     primaryColor: t || "#ff4b4b",
-    textColor: r || "#31333f",
-    font: n || "Source Sans Pro, sans-serif",
-    base: a ? "dark" : "light"
+    font: r || "Source Sans Pro, sans-serif",
+    base: n ? "dark" : "light"
   };
 };
 function VGe({ data: e, setStateValue: t }) {
@@ -77084,7 +77083,6 @@ function VGe({ data: e, setStateValue: t }) {
       theme: {
         token: {
           colorPrimary: c.primaryColor,
-          colorText: c.textColor,
           fontFamily: c.font,
           fontSize: 16,
           controlHeight: 38

@@ -1,3 +1,7 @@
+.st-condition-tree {
+    color: var(--text-color);
+}
+
 .st-condition-tree .query-builder>.group-container,
 .st-condition-tree .query-builder>.group-container>.group>div,
 .st-condition-tree .query-builder>.group-container>.group>.group--children>.group-or-rule-container {

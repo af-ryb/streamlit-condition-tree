@@ -36,14 +36,14 @@ with tab1:
     )
 
     st.subheader("Original Data")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df)
 
     st.subheader("Generated Query")
     st.code(query_string, language="python")
 
     st.subheader("Filtered Result")
     filtered = df.query(query_string)
-    st.dataframe(filtered, use_container_width=True)
+    st.dataframe(filtered)
     st.caption(f"{len(filtered)} of {len(df)} rows")
 
 # ---------------------------------------------------------------------------
