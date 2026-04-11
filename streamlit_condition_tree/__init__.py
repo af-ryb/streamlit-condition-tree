@@ -1,19 +1,16 @@
-import os
+from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
-_RELEASE = False
+_BUILD_DIR = Path(__file__).parent / "frontend" / "build"
 
-if not _RELEASE:
-    _component_func = components.declare_component(
-        "streamlit_condition_tree",
-        url="http://localhost:3001",
-    )
-else:
-    parent_dir = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(parent_dir, "frontend/build")
-    _component_func = components.declare_component("streamlit_condition_tree", path=build_dir)
+_condition_tree_component = st.components.v2.component(
+    name="streamlit_condition_tree",
+    js=(_BUILD_DIR / "index.js").read_text(),
+    css=(_BUILD_DIR / "style.css").read_text(),
+    html="<div></div>",
+    isolate_styles=False,
+)
 
 type_mapper = {
     'b': 'boolean',
@@ -22,7 +19,7 @@ type_mapper = {
     'f': 'number',
     'c': '',
     'm': '',
-    'M': 'datetime',
+    'M': 'date',
     'O': 'text',
     'S': 'text',
     'U': 'text',
@@ -77,26 +74,126 @@ def walk_config(config, func):
                 config[k] = func(config[k])
 
 
-def config_from_dataframe(dataframe):
-    """Return a basic configuration from dataframe columns"""
+def config_from_dataframe(dataframe, exclude_fields=None, max_select_values=200):
+    """Return a configuration from dataframe columns.
 
+    Parameters
+    ----------
+    dataframe : DataFrame
+        Source dataframe to generate config from.
+    exclude_fields : list of str, optional
+        Column names to exclude from the config.
+    max_select_values : int
+        Text columns with this many or fewer unique values are auto-converted
+        to select fields. Set to 0 to disable auto-conversion.
+        Default: 200
+    """
     fields = {}
     for col_name, col_dtype in zip(dataframe.columns, dataframe.dtypes):
-        col_type = 'select' if col_dtype == 'category' else type_mapper[col_dtype.kind]
+        if exclude_fields and col_name in exclude_fields:
+            continue
 
-        if col_type:
-            col_config = {
+        col_type = 'select' if col_dtype == 'category' else type_mapper.get(col_dtype.kind, '')
+
+        if not col_type:
+            continue
+
+        if col_type == 'text' and max_select_values > 0:
+            try:
+                unique_values = sorted(dataframe[col_name].dropna().unique())
+                if len(unique_values) <= max_select_values:
+                    fields[col_name] = {
+                        'label': col_name,
+                        'type': 'select',
+                        'operators': ['select_any_in', 'select_not_any_in'],
+                        'valueSources': ['value'],
+                        'defaultOperator': 'select_any_in',
+                        'fieldSettings': {
+                            'listValues': [{'value': str(v), 'title': str(v)} for v in unique_values],
+                            'showSearch': True,
+                        },
+                    }
+                    continue
+            except Exception:
+                pass  # Fall through to text handling below
+
+        if col_type == 'text':
+            fields[col_name] = {
                 'label': col_name,
-                'type': col_type
+                'type': 'text',
+                'valueSources': ['value'],
             }
-            if col_type == 'select':
-                categories = dataframe[col_name].cat.categories
-                col_config['fieldSettings'] = {
-                    'listValues': [{'value': c, 'title': c} for c in categories]
-                }
-            fields[f'{col_name}'] = col_config
+        elif col_type == 'number':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'number',
+                'operators': ['greater', 'greater_or_equal', 'less', 'less_or_equal',
+                              'between', 'equal', 'not_equal'],
+                'valueSources': ['value'],
+                'defaultOperator': 'greater_or_equal',
+            }
+        elif col_type == 'date':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'date',
+                'operators': ['between', 'less', 'less_or_equal', 'greater', 'greater_or_equal',
+                              'equal', 'not_equal'],
+                'valueSources': ['value'],
+                'defaultOperator': 'between',
+            }
+        elif col_type == 'boolean':
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'boolean',
+                'operators': ['equal'],
+                'valueSources': ['value'],
+            }
+        elif col_type == 'select':
+            categories = dataframe[col_name].cat.categories
+            fields[col_name] = {
+                'label': col_name,
+                'type': 'select',
+                'operators': ['select_any_in', 'select_not_any_in'],
+                'valueSources': ['value'],
+                'fieldSettings': {
+                    'listValues': [{'value': str(c), 'title': str(c)} for c in categories],
+                    'showSearch': True,
+                },
+            }
 
     return {'fields': fields}
+
+
+def _clean_tree(tree, valid_fields):
+    """Remove rules referencing fields not in valid_fields."""
+    if not isinstance(tree, dict):
+        return tree
+
+    if tree.get('type') == 'rule':
+        field = (tree.get('properties') or {}).get('field')
+        if field is not None and field not in valid_fields:
+            return None
+        return tree
+
+    # Group or rule_group — clean children
+    children_key = 'children1' if 'children1' in tree else 'children'
+    children = tree.get(children_key)
+    if children is None:
+        return tree
+
+    if isinstance(children, list):
+        tree[children_key] = [
+            c for c in (_clean_tree(c, valid_fields) for c in children)
+            if c is not None
+        ]
+    elif isinstance(children, dict):
+        tree[children_key] = {
+            k: v for k, v in (
+                (k, _clean_tree(v, valid_fields)) for k, v in children.items()
+            ) if v is not None
+        }
+
+    return tree
 
 
 def condition_tree(config: dict,
@@ -123,7 +220,7 @@ def condition_tree(config: dict,
         Input condition tree
         Default: None
     min_height: int
-        Minimum height of the component frame
+        Minimum height of the component frame (kept for API compatibility)
         Default: 400
     placeholder: str
         Text displayed when the condition tree is empty
@@ -154,23 +251,34 @@ def condition_tree(config: dict,
 
         config['fields'] = fields
 
+    if tree is not None:
+        valid_fields = set(config['fields'].keys())
+        tree = _clean_tree(tree, valid_fields)
+
     walk_config(config, lambda v: v.js_code if isinstance(v, JsCode) else v)
 
-    output_tree, component_value = _component_func(
-        config=config,
-        return_type=return_type,
-        tree=tree,
+    result = _condition_tree_component(
+        data=dict(
+            config=config,
+            return_type=return_type,
+            tree=tree,
+            placeholder=placeholder,
+            always_show_buttons=always_show_buttons,
+        ),
+        default={"output_tree": "", "value": ""},
         key='_' + key if key else None,
-        min_height=min_height,
-        placeholder=placeholder,
-        always_show_buttons=always_show_buttons,
-        default=['', ''],
+        on_output_tree_change=lambda: None,
+        on_value_change=lambda: None,
     )
+
+    output_tree = result.get("output_tree", "") if result else ""
+    component_value = result.get("value", "") if result else ""
 
     if return_type == 'queryString' and not component_value:
         # Default string that applies no filter in DataFrame.query
         component_value = 'index in index'
 
-    st.session_state[key] = output_tree
+    if key:
+        st.session_state[key] = output_tree
 
     return component_value

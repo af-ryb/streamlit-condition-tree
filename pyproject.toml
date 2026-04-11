@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streamlit-condition-tree"
+version = "0.4.0"
+description = "Condition Tree Builder for Streamlit, based on v2 component"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Cédric Villette", email = "cedric_villette@hotmail.fr" },
+]
+dependencies = [
+    "streamlit >= 1.51.0",
+]
+
+[project.optional-dependencies]
+devel = [
+    "pandas",
+    "wheel",
+    "pytest>=7.4.0",
+    "playwright>=1.36.0",
+    "requests>=2.31.0",
+    "pytest-playwright-snapshot>=1.0",
+    "pytest-rerunfailures>=12.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cedricvlt/streamlit-condition-tree"
+
+[tool.setuptools.packages.find]
+include = ["streamlit_condition_tree*"]
+
+[tool.setuptools.package-data]
+streamlit_condition_tree = ["frontend/build/*"]
+
+[tool.streamlit.component]
+[[tool.streamlit.component.components]]
+name = "streamlit_condition_tree"
+asset_dir = "frontend/build"

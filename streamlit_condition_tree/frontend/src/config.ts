@@ -37,12 +37,12 @@ const defaultConfig: Config = {
         between: {
             ...AntdConfig.operators.between,
             formatOp: (field, op, values, valueSrcs, valueTypes, opDef, operatorOptions, isForDisplay) =>
-                typeof values !== 'string' ? `(${values.first()} <= ${field} <= ${values.get(1)})` : ''
+                typeof values !== 'string' ? `(${(values as any).first()} <= ${field} <= ${(values as any).get(1)})` : ''
         },
         not_between: {
             ...AntdConfig.operators.not_between,
             formatOp: (field, op, values, valueSrcs, valueTypes, opDef, operatorOptions, isForDisplay) =>
-                typeof values !== 'string' ? `~(${values.first()} <= ${field} <= ${values.get(1)})` : ''
+                typeof values !== 'string' ? `~(${(values as any).first()} <= ${field} <= ${(values as any).get(1)})` : ''
         },
         is_null: {
             ...AntdConfig.operators.is_null,

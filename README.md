@@ -10,7 +10,11 @@ This component allows users to build complex condition trees that can be used to
 
 ## Install
 
-`pip install streamlit-condition-tree`
+```bash
+pip install git+https://github.com/af-ryb/streamlit-condition-tree@v2_component
+```
+
+Requires **Streamlit >= 1.51.0** (v2 component API).
 
 
 ## Features
