@@ -27,7 +27,7 @@
 
 .st-condition-tree .group {
     background-color: var(--background-color);
-    border: 1px solid rgba(49, 51, 63, 0.2);
+    border: 1px solid color-mix(in srgb, var(--text-color) 15%, transparent);
     border-radius: 8px;
 }
 
@@ -61,4 +61,15 @@
 
 .st-condition-tree .ant-btn-group>button:nth-child(3) {
     margin-left: -2px !important;
+}
+
+/* Soften the delete (trash) buttons: muted at rest, clearly red on hover,
+   so they aren't harsh saturated-red icons sitting in the tree. */
+.st-condition-tree .ant-btn-dangerous {
+    color: color-mix(in srgb, var(--text-color) 55%, transparent);
+}
+
+.st-condition-tree .ant-btn-dangerous:hover,
+.st-condition-tree .ant-btn-dangerous:focus {
+    color: #ff4d4f;
 }
