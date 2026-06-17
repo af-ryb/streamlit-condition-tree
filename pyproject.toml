@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "streamlit-condition-tree"
-version = "0.4.0"
+version = "0.4.1"
 description = "Condition Tree Builder for Streamlit, based on v2 component"
 readme = "README.md"
 license = "MIT"
