@@ -926,6 +926,23 @@ body.qb-dragging .ant-popover {
     background-color: var(--secondary-background-color);
 }
 
+/* react-awesome-query-builder's base CSS hard-codes light backgrounds for
+   rules/groups nested inside a rule_group, at a higher specificity than the
+   rules above — which leaves them white in dark mode. Re-assert the
+   theme-aware backgrounds at matching specificity. */
+.st-condition-tree .rule_group .rule,
+.st-condition-tree .rule_group_ext .rule,
+.st-condition-tree .rule_group .rule_group,
+.st-condition-tree .rule_group .rule_group_ext,
+.st-condition-tree .rule_group_ext .rule_group,
+.st-condition-tree .rule_group_ext .rule_group_ext {
+    background-color: var(--secondary-background-color);
+}
+
+.st-condition-tree .rule_group_ext .group {
+    background-color: var(--background-color);
+}
+
 .st-condition-tree .group {
     background-color: var(--background-color);
     border: 1px solid color-mix(in srgb, var(--text-color) 15%, transparent);
