@@ -101,20 +101,20 @@
         color-mix(in srgb, #ff4d4f 10%, transparent));
 }
 
-/* Selected multi-select values render as red chips (matching the app's other
-   red "family" widgets) in both themes. Scoped to .ant-select-multiple so the
-   single-select field/operator dropdowns keep their native look. */
+/* Selected multi-select values render like native Streamlit multiselect tags:
+   a solid primary-colored chip with white text in both themes (not a washed-out
+   tinted background), so the widget matches the surrounding native
+   st.multiselect widgets. Scoped to .ant-select-multiple so the single-select
+   field/operator dropdowns keep their native look. */
 .st-condition-tree .ant-select-multiple .ant-select-selection-item {
-    background-color: var(--st-red-background-color,
-        color-mix(in srgb, #ff4d4f 16%, transparent));
-    color: var(--st-red-text-color, var(--st-red-color, #ff4d4f));
-    border-color: var(--st-red-background-color,
-        color-mix(in srgb, #ff4d4f 30%, transparent));
+    background-color: var(--st-primary-color, var(--primary-color, #ff4b4b));
+    color: #fff;
+    border-color: transparent;
 }
 
 .st-condition-tree .ant-select-multiple .ant-select-selection-item-remove {
-    color: var(--st-red-text-color, var(--st-red-color, #ff4d4f));
-    opacity: 0.75;
+    color: #fff;
+    opacity: 0.85;
 }
 
 .st-condition-tree .ant-select-multiple .ant-select-selection-item-remove:hover {
