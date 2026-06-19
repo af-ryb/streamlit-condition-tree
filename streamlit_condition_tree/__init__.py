@@ -235,6 +235,9 @@ def condition_tree(config: dict,
         identical successive emits are suppressed. This avoids a visual rerun
         while a rule is half-built (field picked but no value yet). The widget
         still shows the in-progress rule; it just isn't sent until complete.
+        Emits are also held while a value-selection dropdown is open and flushed
+        once it closes, so scrolling/picking several options doesn't trigger a
+        rerun on every toggle.
         Default: false
     key: str or None
         An optional key that uniquely identifies this component. If this is

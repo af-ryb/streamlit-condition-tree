@@ -288,11 +288,23 @@ function ConditionTree({ data, setStateValue, wrapperEl }: Props) {
   const emitCompleteOnly = !!data.emit_complete_only
   const lastEmittedRef = useRef<string | null>(null)
 
+  // While a value-selection dropdown is open, hold emits and remember the latest
+  // tree; flush once on close (see the popup observer effect below). Stops a
+  // rerun firing on every option toggle while the user is still picking.
+  const popupOpenRef = useRef(false)
+  const pendingTreeRef = useRef<ImmutableTree | null>(null)
+
   // Send the (optionally pruned) tree + exported value back to Python. `cfg`
   // lets callers that just rebuilt the config (the field-keys effect) pass the
   // fresh config instead of the stale closed-over one.
   const sendValue = useCallback(
     (immutableTree: ImmutableTree, cfg?: Config) => {
+      if (emitCompleteOnly && popupOpenRef.current) {
+        // A selection popup is open — defer until it closes (flushed there).
+        pendingTreeRef.current = immutableTree
+        return
+      }
+      pendingTreeRef.current = null
       const c = cfg || config
       const exportFunc = exportFunctions[returnTypeRef.current]
       const exportValue = exportFunc ? exportFunc(immutableTree, c) : ""
@@ -408,9 +420,40 @@ function ConditionTree({ data, setStateValue, wrapperEl }: Props) {
     }
   }, [wrapperEl])
 
+  // While a value-selection dropdown (antd Select) is open inside the widget,
+  // hold emits and flush once when it closes — so scrolling / picking several
+  // options in a multi-select popup doesn't fire a Streamlit rerun on every
+  // toggle. Only active under emit_complete_only. Keyed off `.ant-select-open`
+  // on the in-tree trigger (the dropdown panel itself is portaled out of our
+  // subtree, so we can't observe it directly).
+  useEffect(() => {
+    if (!emitCompleteOnly) return
+    const handle = () => {
+      const open = !!wrapperEl.querySelector(".ant-select-open")
+      if (open === popupOpenRef.current) return
+      popupOpenRef.current = open
+      if (!open && pendingTreeRef.current) {
+        const pending = pendingTreeRef.current
+        pendingTreeRef.current = null
+        debouncedSendValue.cancel()
+        sendValue(pending)
+      }
+    }
+    const observer = new MutationObserver(handle)
+    observer.observe(wrapperEl, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    })
+    return () => observer.disconnect()
+  }, [wrapperEl, emitCompleteOnly, sendValue, debouncedSendValue])
+
   const onChange = useCallback(
     (immutableTree: ImmutableTree) => {
       setTree(immutableTree)
+      // Remember the latest tree so a popup-close flush has it even before the
+      // debounce fires.
+      pendingTreeRef.current = immutableTree
       debouncedSendValue(immutableTree)
     },
     [debouncedSendValue]
