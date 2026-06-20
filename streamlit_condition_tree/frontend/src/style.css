@@ -120,3 +120,13 @@
 .st-condition-tree .ant-select-multiple .ant-select-selection-item-remove:hover {
     opacity: 1;
 }
+
+/* antd renders a clear-all (×) over the dropdown arrow on hover for searchable
+   multi-selects. When the selected chips fill the row it lands right against the
+   last chip, so it's easy to wipe the whole selection while reaching for the
+   arrow. Reserve extra space on the trailing edge so chips never reach the
+   arrow/clear — leaving a visible, clickable gap to open the dropdown. Interim
+   fix; the broader option is to disable allowClear on value selects. */
+.st-condition-tree .ant-select-multiple .ant-select-selector {
+    padding-inline-end: 48px !important;
+}
