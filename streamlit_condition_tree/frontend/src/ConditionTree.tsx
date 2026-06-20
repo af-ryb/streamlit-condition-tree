@@ -95,6 +95,22 @@ const parseJsCodeFromPython = (v: string) => {
   }
 }
 
+// Signature that moves when the set of field names changes OR when any field's
+// selectable options (listValues / treeValues) change — the field properties
+// dash_app mutates at runtime via cross-filtering, narrowing one field's options
+// based on another's value. Encoded as a JSON array of [name, options] pairs so
+// the encoding is unambiguous (no separator can collide) and only plain option
+// data is serialized — it can't throw on JsCode/non-serializable field values.
+const fieldsSignature = (fields: Record<string, any> = {}): string =>
+  JSON.stringify(
+    Object.keys(fields)
+      .sort()
+      .map((k) => {
+        const fs = fields[k]?.fieldSettings
+        return [k, fs?.treeValues ?? fs?.listValues ?? null]
+      })
+  )
+
 // Parse a CSS color (hex #rgb/#rrggbb or rgb()/rgba()) into RGB channels.
 // Returns null when the value can't be parsed (e.g. named colors, empty).
 const parseColor = (value: string): { r: number; g: number; b: number } | null => {
@@ -316,7 +332,7 @@ function ConditionTree({ data, setStateValue, wrapperEl }: Props) {
       if (emitCompleteOnly) {
         // Suppress the round-trip (hence the rerun) when nothing that yields a
         // predicate actually changed.
-        const sig = JSON.stringify(outputTree) + " " + exportValue
+        const sig = JSON.stringify(outputTree) + " " + exportValue
         if (sig === lastEmittedRef.current) return
         lastEmittedRef.current = sig
       }
@@ -327,15 +343,17 @@ function ConditionTree({ data, setStateValue, wrapperEl }: Props) {
     [config, setStateValue, emitCompleteOnly]
   )
 
-  // Track previous field keys to detect config changes
-  const prevFieldKeysRef = useRef(
-    Object.keys(data.config?.fields || {}).sort().join('\0')
-  )
+  // Re-apply config when the field config changes — either the set of field
+  // names, or a field's selectable options (listValues/treeValues). The latter
+  // lets a host app narrow a field's options via cross-filtering and have the
+  // widget pick them up live, without remounting (which would race the initial
+  // emit against the re-seeded tree and could drop rules). See fieldsSignature.
+  const prevFieldsSigRef = useRef(fieldsSignature(data.config?.fields))
 
   useEffect(() => {
-    const currentFieldKeys = Object.keys(data.config?.fields || {}).sort().join('\0')
-    if (currentFieldKeys !== prevFieldKeysRef.current) {
-      prevFieldKeysRef.current = currentFieldKeys
+    const currentSig = fieldsSignature(data.config?.fields)
+    if (currentSig !== prevFieldsSigRef.current) {
+      prevFieldsSigRef.current = currentSig
 
       const userConfig = deepMap(data.config, parseJsCodeFromPython)
       const newConfig = _.merge({}, defaultConfig, userConfig)
