@@ -6,7 +6,9 @@ from streamlit_condition_tree import condition_tree, config_from_dataframe
 st.set_page_config(page_title="Condition Tree Demo", layout="wide")
 st.title("Condition Tree Demo")
 
-tab1, tab2 = st.tabs(["DataFrame Example", "JSON Example"])
+tab1, tab2, tab3 = st.tabs(
+    ["DataFrame Example", "JSON Example", "Cross-filter (dynamic options)"]
+)
 
 # ---------------------------------------------------------------------------
 # Tab 1 — DataFrame filtering with queryString
@@ -100,3 +102,69 @@ with tab2:
 
     st.subheader("jsonLogic Output")
     st.json(json_logic if json_logic else {})
+
+# ---------------------------------------------------------------------------
+# Tab 3 — Cross-filter: a field's listValues change at runtime
+# ---------------------------------------------------------------------------
+with tab3:
+    st.header("Cross-filter — dynamic options")
+    st.caption(
+        "Pick a media source: the `campaign` field's options are narrowed to that "
+        "source. The widget picks up the new options **live, without remounting**, "
+        "so rules on other fields are preserved. (Mirrors a host app that "
+        "cross-filters one field's choices based on another's value.)"
+    )
+
+    campaigns_by_source = {
+        "google": ["g_brand", "g_generic", "g_retargeting"],
+        "meta": ["m_prospecting", "m_lookalike", "m_retargeting"],
+        "tiktok": ["tt_awareness", "tt_conversion"],
+    }
+
+    source = st.selectbox(
+        "Media source (drives the campaign options below)",
+        list(campaigns_by_source),
+    )
+    campaigns = campaigns_by_source[source]
+
+    cf_config = {
+        "fields": {
+            "media_source": {
+                "label": "Media source",
+                "type": "select",
+                "operators": ["select_any_in", "select_not_any_in"],
+                "fieldSettings": {
+                    "listValues": [
+                        {"value": s, "title": s} for s in campaigns_by_source
+                    ],
+                },
+            },
+            "campaign": {
+                "label": "Campaign",
+                "type": "select",
+                "operators": ["select_any_in", "select_not_any_in"],
+                "fieldSettings": {
+                    "listValues": [{"value": c, "title": c} for c in campaigns],
+                },
+            },
+            "clicks": {
+                "label": "Clicks",
+                "type": "number",
+                "operators": ["greater", "less", "between", "equal"],
+            },
+        },
+    }
+
+    cf_result = condition_tree(
+        cf_config,
+        return_type="jsonLogic",
+        emit_complete_only=True,
+        key="cf_tree",
+    )
+
+    st.write(f"`campaign` options for **{source}**: `{campaigns}`")
+    st.caption(
+        "Try: add a `clicks > 5` rule, then switch the media source. The clicks "
+        "rule stays (no tree wipe) and the campaign dropdown shows the new options."
+    )
+    st.json(cf_result if cf_result else {})

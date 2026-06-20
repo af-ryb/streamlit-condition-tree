@@ -202,6 +202,7 @@ def condition_tree(config: dict,
                    min_height: int = 400,
                    placeholder: str = '',
                    always_show_buttons: bool = True,
+                   emit_complete_only: bool = False,
                    key: str = None,
                    ):
     """Create a new instance of condition_tree.
@@ -228,6 +229,16 @@ def condition_tree(config: dict,
     always_show_buttons: boolean
         If false, buttons (add rule, etc.) will be shown only on hover
         Default: true
+    emit_complete_only: boolean
+        If true, only rules that contribute a predicate (a known field with a
+        value filled in for its operator) are emitted back to Streamlit, and
+        identical successive emits are suppressed. This avoids a visual rerun
+        while a rule is half-built (field picked but no value yet). The widget
+        still shows the in-progress rule; it just isn't sent until complete.
+        Emits are also held while a value-selection dropdown is open and flushed
+        once it closes, so scrolling/picking several options doesn't trigger a
+        rerun on every toggle.
+        Default: false
     key: str or None
         An optional key that uniquely identifies this component. If this is
         None, and the component's arguments are changed, the component will
@@ -264,6 +275,7 @@ def condition_tree(config: dict,
             tree=tree,
             placeholder=placeholder,
             always_show_buttons=always_show_buttons,
+            emit_complete_only=emit_complete_only,
         ),
         default={"output_tree": "", "value": ""},
         key='_' + key if key else None,

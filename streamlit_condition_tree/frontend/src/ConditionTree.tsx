@@ -26,6 +26,7 @@ import "./style.css"
 import "@fontsource/source-sans-pro"
 import { defaultConfig } from "./config"
 import { deepMap } from "./utils"
+import { pruneIncompleteRules } from "./prune"
 
 interface ConditionTreeData {
   config: Record<string, any>
@@ -33,11 +34,15 @@ interface ConditionTreeData {
   tree: any | null
   placeholder: string
   always_show_buttons: boolean
+  emit_complete_only: boolean
 }
 
 interface Props {
   data: ConditionTreeData
   setStateValue: (name: string, value: any) => void
+  // The component's instance wrapper element. Streamlit v2 exposes the theme as
+  // `--st-*` custom properties that inherit down to it (see getStreamlitTheme).
+  wrapperEl: HTMLElement
 }
 
 const defaultTree: JsonGroup = {
@@ -90,6 +95,22 @@ const parseJsCodeFromPython = (v: string) => {
   }
 }
 
+// Signature that moves when the set of field names changes OR when any field's
+// selectable options (listValues / treeValues) change — the field properties
+// dash_app mutates at runtime via cross-filtering, narrowing one field's options
+// based on another's value. Encoded as a JSON array of [name, options] pairs so
+// the encoding is unambiguous (no separator can collide) and only plain option
+// data is serialized — it can't throw on JsCode/non-serializable field values.
+const fieldsSignature = (fields: Record<string, any> = {}): string =>
+  JSON.stringify(
+    Object.keys(fields)
+      .sort()
+      .map((k) => {
+        const fs = fields[k]?.fieldSettings
+        return [k, fs?.treeValues ?? fs?.listValues ?? null]
+      })
+  )
+
 // Parse a CSS color (hex #rgb/#rrggbb or rgb()/rgba()) into RGB channels.
 // Returns null when the value can't be parsed (e.g. named colors, empty).
 const parseColor = (value: string): { r: number; g: number; b: number } | null => {
@@ -128,6 +149,16 @@ const mix = (a: string, b: string, t: number): string => {
   return `rgb(${ch(c1.r, c2.r)}, ${ch(c1.g, c2.g)}, ${ch(c1.b, c2.b)})`
 }
 
+// Parse a CSS length (px/rem/em or unitless) to a px number for Ant Design
+// tokens. rem/em are approximated at 16px. Falls back when unparseable.
+const radiusToPx = (v: string, fallback = 8): number => {
+  const m = (v || "").trim().match(/^([\d.]+)(px|rem|em)?$/)
+  if (!m) return fallback
+  const n = parseFloat(m[1])
+  if (isNaN(n)) return fallback
+  return m[2] === "rem" || m[2] === "em" ? n * 16 : n
+}
+
 const TRANSPARENT = new Set(["transparent", "rgba(0, 0, 0, 0)", ""])
 
 // First opaque, parseable background-color walking the app's root chain.
@@ -154,16 +185,33 @@ interface StreamlitTheme {
   textColor: string
   backgroundColor: string
   secondaryBackgroundColor: string
+  borderColor: string
+  baseRadius: string
 }
 
-const getStreamlitTheme = (): StreamlitTheme => {
-  const root = getComputedStyle(document.documentElement)
-  const body = getComputedStyle(document.body)
-  const cssVar = (name: string) => root.getPropertyValue(name).trim()
+// Read an `--st-*` theme custom property from `scope`, falling back to the
+// legacy bare-named variable, then to "".
+const readVar = (
+  scope: CSSStyleDeclaration,
+  stName: string,
+  bareName?: string
+): string => {
+  const v = scope.getPropertyValue(stName).trim()
+  if (v) return v
+  return bareName ? scope.getPropertyValue(bareName).trim() : ""
+}
 
-  // Prefer Streamlit's CSS variables (newer versions expose them); otherwise
-  // fall back to what the page actually renders.
-  let backgroundColor = cssVar("--background-color") || firstOpaqueBackground()
+const getStreamlitTheme = (el: HTMLElement): StreamlitTheme => {
+  // Streamlit Components v2 exposes the active theme as `--st-*` custom
+  // properties on the component's instance wrapper; they inherit down to `el`.
+  // Older Streamlit versions used bare names (or no vars at all) — hence the
+  // bare-name + page-background fallbacks below.
+  const scope = getComputedStyle(el)
+  const body = getComputedStyle(document.body)
+
+  let backgroundColor =
+    readVar(scope, "--st-background-color", "--background-color") ||
+    firstOpaqueBackground()
 
   // Decide dark/light from the resolved background color — works regardless of
   // how the theme was selected (in-app settings, config.toml or OS). Fall back
@@ -174,33 +222,54 @@ const getStreamlitTheme = (): StreamlitTheme => {
       ? luminance(bg) < 128
       : document.documentElement.getAttribute("data-theme") === "dark" ||
         document.body.classList.contains("dark") ||
-        root.getPropertyValue("color-scheme").trim().includes("dark") ||
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("color-scheme")
+          .trim()
+          .includes("dark") ||
         window.matchMedia("(prefers-color-scheme: dark)").matches
 
   if (!backgroundColor) backgroundColor = isDark ? "#0e1117" : "#ffffff"
 
-  let textColor = cssVar("--text-color") || body.color
+  let textColor = readVar(scope, "--st-text-color", "--text-color") || body.color
   if (!textColor || TRANSPARENT.has(textColor))
     textColor = isDark ? "#fafafa" : "#31333f"
 
-  // Secondary surface: use Streamlit's var if present, else a subtle elevation
-  // of the background toward the text color (approximates Streamlit's own
+  // Secondary surface: Streamlit's var if present, else a subtle elevation of
+  // the background toward the text color (approximates Streamlit's own
   // secondary background and adapts to custom themes).
   const secondaryBackgroundColor =
-    cssVar("--secondary-background-color") ||
-    mix(backgroundColor, textColor, isDark ? 0.1 : 0.045)
+    readVar(
+      scope,
+      "--st-secondary-background-color",
+      "--secondary-background-color"
+    ) || mix(backgroundColor, textColor, isDark ? 0.1 : 0.045)
+
+  // Border: prefer Streamlit's border color, else a subtle text-derived line.
+  let borderColor = readVar(scope, "--st-border-color")
+  if (!borderColor) {
+    const c = parseColor(textColor)
+    borderColor = c
+      ? `rgba(${c.r}, ${c.g}, ${c.b}, 0.18)`
+      : "rgba(128, 128, 128, 0.25)"
+  }
 
   return {
-    primaryColor: cssVar("--primary-color") || "#ff4b4b",
-    font: cssVar("--font") || body.fontFamily || "Source Sans Pro, sans-serif",
+    primaryColor:
+      readVar(scope, "--st-primary-color", "--primary-color") || "#ff4b4b",
+    font:
+      readVar(scope, "--st-font", "--font") ||
+      body.fontFamily ||
+      "Source Sans Pro, sans-serif",
     base: isDark ? "dark" : "light",
     textColor,
     backgroundColor,
     secondaryBackgroundColor,
+    borderColor,
+    baseRadius: readVar(scope, "--st-base-radius") || "8px",
   }
 }
 
-function ConditionTree({ data, setStateValue }: Props) {
+function ConditionTree({ data, setStateValue, wrapperEl }: Props) {
   // Initialize config once from first render's data
   const [config, setConfig] = useState<Config>(() => {
     let userConfig = deepMap(data.config, parseJsCodeFromPython)
@@ -229,15 +298,62 @@ function ConditionTree({ data, setStateValue }: Props) {
   const returnTypeRef = useRef(data.return_type)
   returnTypeRef.current = data.return_type
 
-  // Track previous field keys to detect config changes
-  const prevFieldKeysRef = useRef(
-    Object.keys(data.config?.fields || {}).sort().join('\0')
+  // When emit_complete_only is on, only rules that contribute a predicate are
+  // emitted, and identical successive emits are suppressed — so picking a field
+  // without a value yet doesn't trigger a Streamlit rerun/flicker.
+  const emitCompleteOnly = !!data.emit_complete_only
+  const lastEmittedRef = useRef<string | null>(null)
+
+  // While a value-selection dropdown is open, hold emits and remember the latest
+  // tree; flush once on close (see the popup observer effect below). Stops a
+  // rerun firing on every option toggle while the user is still picking.
+  const popupOpenRef = useRef(false)
+  const pendingTreeRef = useRef<ImmutableTree | null>(null)
+
+  // Send the (optionally pruned) tree + exported value back to Python. `cfg`
+  // lets callers that just rebuilt the config (the field-keys effect) pass the
+  // fresh config instead of the stale closed-over one.
+  const sendValue = useCallback(
+    (immutableTree: ImmutableTree, cfg?: Config) => {
+      if (emitCompleteOnly && popupOpenRef.current) {
+        // A selection popup is open — defer until it closes (flushed there).
+        pendingTreeRef.current = immutableTree
+        return
+      }
+      pendingTreeRef.current = null
+      const c = cfg || config
+      const exportFunc = exportFunctions[returnTypeRef.current]
+      const exportValue = exportFunc ? exportFunc(immutableTree, c) : ""
+
+      let outputTree: any = QbUtils.getTree(immutableTree)
+      if (emitCompleteOnly) outputTree = pruneIncompleteRules(outputTree, c)
+      unformatTree(outputTree)
+
+      if (emitCompleteOnly) {
+        // Suppress the round-trip (hence the rerun) when nothing that yields a
+        // predicate actually changed.
+        const sig = JSON.stringify(outputTree) + " " + exportValue
+        if (sig === lastEmittedRef.current) return
+        lastEmittedRef.current = sig
+      }
+
+      setStateValue("output_tree", outputTree)
+      setStateValue("value", exportValue)
+    },
+    [config, setStateValue, emitCompleteOnly]
   )
 
+  // Re-apply config when the field config changes — either the set of field
+  // names, or a field's selectable options (listValues/treeValues). The latter
+  // lets a host app narrow a field's options via cross-filtering and have the
+  // widget pick them up live, without remounting (which would race the initial
+  // emit against the re-seeded tree and could drop rules). See fieldsSignature.
+  const prevFieldsSigRef = useRef(fieldsSignature(data.config?.fields))
+
   useEffect(() => {
-    const currentFieldKeys = Object.keys(data.config?.fields || {}).sort().join('\0')
-    if (currentFieldKeys !== prevFieldKeysRef.current) {
-      prevFieldKeysRef.current = currentFieldKeys
+    const currentSig = fieldsSignature(data.config?.fields)
+    if (currentSig !== prevFieldsSigRef.current) {
+      prevFieldsSigRef.current = currentSig
 
       const userConfig = deepMap(data.config, parseJsCodeFromPython)
       const newConfig = _.merge({}, defaultConfig, userConfig)
@@ -246,31 +362,10 @@ function ConditionTree({ data, setStateValue }: Props) {
       const checkedTree = QbUtils.checkTree(tree, newConfig)
       setTree(checkedTree)
 
-      // Send sanitized values to Python
-      const exportFunc = exportFunctions[returnTypeRef.current]
-      const exportValue = exportFunc ? exportFunc(checkedTree, newConfig) : ""
-      let outputTree: JsonTree = QbUtils.getTree(checkedTree)
-      unformatTree(outputTree)
-      setStateValue("output_tree", outputTree)
-      setStateValue("value", exportValue)
+      // Send sanitized values to Python with the freshly-built config.
+      sendValue(checkedTree, newConfig)
     }
   })
-
-  // Debounced function to send value to Streamlit
-  const sendValue = useCallback(
-    (immutableTree: ImmutableTree) => {
-      const exportFunc = exportFunctions[returnTypeRef.current]
-      const exportValue = exportFunc
-        ? exportFunc(immutableTree, config)
-        : ""
-
-      let outputTree: JsonTree = QbUtils.getTree(immutableTree)
-      unformatTree(outputTree)
-      setStateValue("output_tree", outputTree)
-      setStateValue("value", exportValue)
-    },
-    [config, setStateValue]
-  )
 
   const debouncedSendValue = useMemo(
     () => _.debounce(sendValue, 300),
@@ -299,30 +394,36 @@ function ConditionTree({ data, setStateValue }: Props) {
 
   // Read theme from Streamlit CSS variables, and keep it in sync when the
   // user toggles Streamlit's theme (no remount needed).
-  const [theme, setTheme] = useState<StreamlitTheme>(getStreamlitTheme)
+  const [theme, setTheme] = useState<StreamlitTheme>(() =>
+    getStreamlitTheme(wrapperEl)
+  )
 
   useEffect(() => {
     const refresh = () =>
       setTheme((prev) => {
-        const next = getStreamlitTheme()
+        const next = getStreamlitTheme(wrapperEl)
         const changed =
           next.base !== prev.base ||
           next.primaryColor !== prev.primaryColor ||
           next.font !== prev.font ||
           next.textColor !== prev.textColor ||
           next.backgroundColor !== prev.backgroundColor ||
-          next.secondaryBackgroundColor !== prev.secondaryBackgroundColor
+          next.secondaryBackgroundColor !== prev.secondaryBackgroundColor ||
+          next.borderColor !== prev.borderColor ||
+          next.baseRadius !== prev.baseRadius
         return changed ? next : prev
       })
 
-    // Streamlit updates CSS variables / classes on the root, body and the
-    // .stApp container when the active theme changes.
+    // Streamlit updates CSS variables / classes on the root, body, the .stApp
+    // container and the component's own wrapper when the active theme changes.
     const observer = new MutationObserver(refresh)
     const attributeFilter = ["style", "class", "data-theme"]
     const targets = [
       document.documentElement,
       document.body,
       document.querySelector(".stApp"),
+      wrapperEl,
+      wrapperEl.parentElement,
     ]
     targets.forEach(
       (el) => el && observer.observe(el, { attributes: true, attributeFilter })
@@ -335,19 +436,42 @@ function ConditionTree({ data, setStateValue }: Props) {
       observer.disconnect()
       mq.removeEventListener("change", refresh)
     }
-  }, [])
+  }, [wrapperEl])
 
-  // Subtle, theme-aware border color derived from the text color.
-  const borderColor = useMemo(() => {
-    const c = parseColor(theme.textColor)
-    return c
-      ? `rgba(${c.r}, ${c.g}, ${c.b}, 0.18)`
-      : "rgba(128, 128, 128, 0.25)"
-  }, [theme.textColor])
+  // While a value-selection dropdown (antd Select) is open inside the widget,
+  // hold emits and flush once when it closes — so scrolling / picking several
+  // options in a multi-select popup doesn't fire a Streamlit rerun on every
+  // toggle. Only active under emit_complete_only. Keyed off `.ant-select-open`
+  // on the in-tree trigger (the dropdown panel itself is portaled out of our
+  // subtree, so we can't observe it directly).
+  useEffect(() => {
+    if (!emitCompleteOnly) return
+    const handle = () => {
+      const open = !!wrapperEl.querySelector(".ant-select-open")
+      if (open === popupOpenRef.current) return
+      popupOpenRef.current = open
+      if (!open && pendingTreeRef.current) {
+        const pending = pendingTreeRef.current
+        pendingTreeRef.current = null
+        debouncedSendValue.cancel()
+        sendValue(pending)
+      }
+    }
+    const observer = new MutationObserver(handle)
+    observer.observe(wrapperEl, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    })
+    return () => observer.disconnect()
+  }, [wrapperEl, emitCompleteOnly, sendValue, debouncedSendValue])
 
   const onChange = useCallback(
     (immutableTree: ImmutableTree) => {
       setTree(immutableTree)
+      // Remember the latest tree so a popup-close flush has it even before the
+      // debounce fires.
+      pendingTreeRef.current = immutableTree
       debouncedSendValue(immutableTree)
     },
     [debouncedSendValue]
@@ -392,13 +516,13 @@ function ConditionTree({ data, setStateValue }: Props) {
             fontFamily: theme.font,
             fontSize: 16,
             controlHeight: 38,
-            borderRadius: 8,
+            borderRadius: radiusToPx(theme.baseRadius),
             // Match Streamlit's own colors so controls feel native rather
             // than using Ant Design's generic grey palette.
             colorText: theme.textColor,
             colorBgContainer: theme.secondaryBackgroundColor,
             colorBgElevated: theme.secondaryBackgroundColor,
-            colorBorder: borderColor,
+            colorBorder: theme.borderColor,
           },
           algorithm:
             theme.base === "dark"

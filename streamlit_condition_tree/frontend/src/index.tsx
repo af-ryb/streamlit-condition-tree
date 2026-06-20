@@ -44,7 +44,11 @@ const render: FrontendRenderer = ({ data, key, setStateValue, parentElement }) =
 
   entry.root.render(
     <ErrorBoundary>
-      <ConditionTree data={data as any} setStateValue={setStateValue} />
+      <ConditionTree
+        data={data as any}
+        setStateValue={setStateValue}
+        wrapperEl={entry.container}
+      />
     </ErrorBoundary>
   )
 
