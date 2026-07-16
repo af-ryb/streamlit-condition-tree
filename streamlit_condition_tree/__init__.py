@@ -164,7 +164,35 @@ def config_from_dataframe(dataframe, exclude_fields=None, max_select_values=200)
     return {'fields': fields}
 
 
-def _clean_tree(tree, valid_fields):
+def _valid_field_paths(fields, separator='.'):
+    """Return the leaf field paths addressable by a rule.
+
+    Grouped fields ('!group' / '!struct') hold their leaves in `subfields`, and
+    rules address those leaves by their full path ('ads.ads_1'), not by the
+    group name — so the group names themselves are not valid rule fields. On a
+    flat config this returns the same set as `fields.keys()`.
+    """
+    paths = set()
+    for name, field_config in (fields or {}).items():
+        subfields = field_config.get('subfields') if isinstance(field_config, dict) else None
+        if isinstance(subfields, dict):
+            paths |= {
+                f'{name}{separator}{path}'
+                for path in _valid_field_paths(subfields, separator)
+            }
+        else:
+            paths.add(name)
+    return paths
+
+
+def _clean_tree(tree, config):
+    """Remove rules referencing fields not defined in config."""
+    separator = (config.get('settings') or {}).get('fieldSeparator', '.')
+    valid_fields = _valid_field_paths(config.get('fields'), separator)
+    return _prune_unknown_fields(tree, valid_fields)
+
+
+def _prune_unknown_fields(tree, valid_fields):
     """Remove rules referencing fields not in valid_fields."""
     if not isinstance(tree, dict):
         return tree
@@ -183,13 +211,14 @@ def _clean_tree(tree, valid_fields):
 
     if isinstance(children, list):
         tree[children_key] = [
-            c for c in (_clean_tree(c, valid_fields) for c in children)
+            c for c in (_prune_unknown_fields(c, valid_fields) for c in children)
             if c is not None
         ]
     elif isinstance(children, dict):
         tree[children_key] = {
             k: v for k, v in (
-                (k, _clean_tree(v, valid_fields)) for k, v in children.items()
+                (k, _prune_unknown_fields(v, valid_fields))
+                for k, v in children.items()
             ) if v is not None
         }
 
@@ -263,8 +292,7 @@ def condition_tree(config: dict,
         config['fields'] = fields
 
     if tree is not None:
-        valid_fields = set(config['fields'].keys())
-        tree = _clean_tree(tree, valid_fields)
+        tree = _clean_tree(tree, config)
 
     walk_config(config, lambda v: v.js_code if isinstance(v, JsCode) else v)
 

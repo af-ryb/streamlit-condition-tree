@@ -24,6 +24,24 @@ const nonEmpty = (v: any): boolean => {
   return true
 }
 
+// The leaf field paths a rule can address, mirroring `_valid_field_paths` in
+// __init__.py. Grouped fields ('!group' / '!struct') keep their leaves in
+// `subfields` and rules address them by full path ('ads.ads_1'), so the group
+// names themselves are not valid rule fields. Flat configs yield their own keys.
+const collectFieldPaths = (fields: any, separator: string): Set<string> => {
+  const paths = new Set<string>()
+  for (const [name, fieldConfig] of Object.entries(fields ?? {})) {
+    const subfields = (fieldConfig as any)?.subfields
+    if (subfields && typeof subfields === "object") {
+      for (const path of collectFieldPaths(subfields, separator))
+        paths.add(`${name}${separator}${path}`)
+    } else {
+      paths.add(name)
+    }
+  }
+  return paths
+}
+
 export const ruleContributes = (
   field: any,
   operator: any,
@@ -32,7 +50,9 @@ export const ruleContributes = (
 ): boolean => {
   if (!field) return false
   // Unmapped field (mirror of dash_app's `field not in col_by_field`).
-  if (config?.fields && !(field in config.fields)) return false
+  const separator = (config as any)?.settings?.fieldSeparator ?? "."
+  if (config?.fields && !collectFieldPaths(config.fields, separator).has(field))
+    return false
 
   const opDef = operator ? (config?.operators as any)?.[operator] : undefined
   // Unknown / unset operator -> no predicate.
