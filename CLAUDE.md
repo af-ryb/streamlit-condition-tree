@@ -42,9 +42,11 @@ cd streamlit_condition_tree/frontend && npm run dev
 # Install with dev dependencies
 uv pip install -e ".[devel]"
 
-# Run tests — note: pytest + pytest-playwright-snapshot are declared in
-# [devel], but no test suite is currently checked into the repo
+# Run Python tests (tests/)
 pytest
+
+# Run frontend tests (vitest, colocated as src/*.test.ts)
+cd streamlit_condition_tree/frontend && npm test
 ```
 
 ## Architecture
@@ -52,7 +54,7 @@ pytest
 **Python module** (`streamlit_condition_tree/__init__.py`): Single-file module containing all public API.
 - `condition_tree()` — main component function; uses `st.components.v2.component` with inline JS/CSS content. When a `tree` is passed in, it is first sanitized by `_clean_tree()`; the result is stored in `st.session_state[key]`. Note the component is registered with key `'_' + key` internally.
 - `config_from_dataframe()` — auto-generates field config from DataFrame column dtypes via `type_mapper`. Also supports `exclude_fields` and `max_select_values`: low-cardinality `text` columns (≤ `max_select_values` unique values) and `category` dtypes are auto-converted to `select` fields with `listValues`.
-- `_clean_tree()` — recursively strips rules whose `field` is not in the current config's fields, so an input `tree` from a prior config doesn't break the builder. Handles both `children` and `children1` child keys.
+- `_clean_tree()` — recursively strips rules whose `field` is not in the current config's fields, so an input `tree` from a prior config doesn't break the builder. Handles both `children` and `children1` child keys. Valid fields come from `_valid_field_paths()`, which walks `subfields` and returns **leaf paths** joined by `settings.fieldSeparator` (default `.`): grouped configs (`"type": "!group"` / `"!struct"`) are addressed by rules as `ads.ads_1`, never by the bare group name, so comparing against `fields.keys()` would drop every rule. On a flat config it returns the same set as `fields.keys()` — block filters rely on that to keep cleaning rules whose column has vanished from the frame. `frontend/src/prune.ts` mirrors this walk for `emit_complete_only`; the two must agree.
 - `JsCode` — wraps JavaScript strings for injection into config (uses `::JSCODE::` sentinel)
 - `walk_config()` — recursively processes config dicts, converting `JsCode` instances at leaf nodes
 
