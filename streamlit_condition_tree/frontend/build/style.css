@@ -1013,8 +1013,15 @@ body.qb-dragging .ant-popover {
     border-color: transparent;
 }
 
+/* `!important` is load-bearing: antd's small-size variant styles this icon via
+   `.ant-select-multiple.ant-select-sm .ant-select-selection-overflow
+   .ant-select-selection-item-remove` (specificity 0-4-0, plus 0-4-1 for its
+   `:hover`), which outranks any selector we can write here without matching its
+   internal DOM. Losing that cascade drops the icon back to antd's `colorIcon`
+   token — near-black in light theme, so the × turned black on the red chip
+   while dark theme only looked right because the dark token is white-ish. */
 .st-condition-tree .ant-select-multiple .ant-select-selection-item-remove {
-    color: #fff;
+    color: #fff !important;
     opacity: 0.85;
 }
 
